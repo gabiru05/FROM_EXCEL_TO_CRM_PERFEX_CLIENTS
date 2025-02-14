@@ -1,0 +1,6 @@
+input/
+output/
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
