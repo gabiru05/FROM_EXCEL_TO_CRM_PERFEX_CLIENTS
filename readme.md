@@ -33,5 +33,17 @@ python procesar_directorio.py entrada -o salida -f csv
 ejemplos para mi uso:
 
 ```bash
-python transform_to_upload_clients_dashboard.py input -o output -f csv
+python transform_to_upload_clients_dashboard_bygroup.py input -o output -f csv
 ```
+
+
+python comparar_nombres.py input input/compare
+
+
+python TRANSFORM_TO_POSIBLE.py input -o output -f csv
+
+
+python Extraer_preparar.py input -o output -f csv
+
+
+python Preparar_corp.py input -o output -f csv

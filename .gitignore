@@ -4,3 +4,6 @@ output/
 *.xlsx
 *.xlsm
 *.xlsb
+*.csv
+divisor_de_archivos/dist
+divisor_de_archivos/build

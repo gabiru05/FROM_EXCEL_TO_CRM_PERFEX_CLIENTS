@@ -3,17 +3,15 @@ import re
 import os
 import argparse
 from glob import glob
+import csv  # Importante: Importar el módulo csv
 
 
 def split_name(full_name):
-    """Divide un nombre completo en nombre y apellido, manejando codificación."""
-    if not isinstance(full_name, str):  # Verifica si es una cadena
+    """Divide un nombre completo en nombre y apellido."""
+    if not isinstance(full_name, str):
         return "", ""
 
-    # Ya no es necesario intentar decodificar, pandas se encarga si leemos correctamente.
-
     parts = full_name.split()
-
     if len(parts) == 0:
         return "", ""
     elif len(parts) == 1:
@@ -50,15 +48,15 @@ def process_and_split_excel(input_file, output_dir, output_format="excel",
     """
 
     try:
-        # Intenta leer como Excel primero (maneja mejor las codificaciones automáticamente)
+        # Intenta leer como Excel primero
         df = pd.read_excel(input_file, engine='openpyxl')
     except (FileNotFoundError, ValueError, KeyError, TypeError) as e1:
         try:
-            # Si falla Excel, intenta leer como CSV con UTF-8
+            # Si falla Excel, intenta leer como CSV con UTF-8 y delimitador \t
             df = pd.read_csv(input_file, sep='\t', encoding='utf-8')
         except (FileNotFoundError, pd.errors.ParserError, UnicodeDecodeError) as e2:
             try:
-                # Si UTF-8 falla, intenta con latin-1 como último recurso
+                # Si UTF-8 falla, intenta con latin-1 y delimitador \t
                 df = pd.read_csv(input_file, sep='\t', encoding='latin-1')
             except (FileNotFoundError, pd.errors.ParserError, UnicodeDecodeError) as e3:
                 print(f"Error: No se pudo leer el archivo '{input_file}' ni como Excel ni como CSV.")
@@ -100,9 +98,9 @@ def process_and_split_excel(input_file, output_dir, output_format="excel",
                         'Firstname': firstname, 'Lastname': lastname, 'Email': email,
                         'Contact phonenumber': phone_number, 'Position': position,
                         'Company': company, 'Vat': '', 'Phonenumber': '', 'Country': 'Panama',
-                        'City': '', 'Zip': '', 'State': '', 'Address': '',
+                        'City': 'SAN FELIPE', 'Zip': '', 'State': '', 'Address': '',
                         'Website': '', 'Billing street': '', 'Billing city': 'Panama',
-                        'Billing state': '', 'Billing zip': '', 'Billing country': 'Panama',
+                        'Billing state': 'SAN FELIPE', 'Billing zip': '', 'Billing country': 'Panama',
                         'Shipping street': '', 'Shipping city': '', 'Shipping state': '',
                         'Shipping zip': '', 'Shipping country': '', 'Longitude': '', 'Latitude': '',
                         'Stripe id': ''
@@ -130,10 +128,15 @@ def process_and_split_excel(input_file, output_dir, output_format="excel",
             if output_format == "csv":
                 output_filepath = os.path.join(output_dir, f"{output_filename}.csv")
                 try:
-  # Guarda en UTF-8
-                    output_df.to_csv(output_filepath, index=False, encoding='utf-8-sig')
+                    # --- CAMBIO IMPORTANTE AQUÍ: Usar csv.writer ---
+                    with open(output_filepath, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+                        writer.writerow(output_df.columns)  # Escribe los encabezados
+                        for row in output_df.values:
+                            writer.writerow(row)  # Escribe cada fila
+                    # ------------------------------------------------
                     print(f"Datos de '{group_name}' guardados en '{output_filepath}'")
-                    
+
                 except Exception as e:
                     print(f"Error al guardar '{output_filepath}': {e}")
             else:

@@ -3,17 +3,14 @@ import re
 import os
 import argparse
 from glob import glob
+import csv  # Importar el módulo csv
 
 
 def split_name(full_name):
-    """Divide un nombre completo en nombre y apellido, manejando codificación."""
-    if not isinstance(full_name, str):  # Verifica si es una cadena
+    """Divide un nombre completo en nombre y apellido."""
+    if not isinstance(full_name, str):
         return "", ""
-
-    # Ya no es necesario intentar decodificar, pandas se encarga si leemos correctamente.
-
     parts = full_name.split()
-
     if len(parts) == 0:
         return "", ""
     elif len(parts) == 1:
@@ -25,7 +22,6 @@ def split_name(full_name):
         lastname = []
         compound_names = ["María", "Ana", "Juan", "Luis", "José", "Carlos",
                         "San", "Santa", "De", "Del", "La", "El", "Los"]
-
         i = 0
         while i < len(parts):
             if i < len(parts) - 1 and parts[i] in compound_names:
@@ -34,34 +30,30 @@ def split_name(full_name):
             else:
                 firstname.append(parts[i])
                 i += 1
-
         if len(firstname) >= 3:
             mid = len(firstname) // 2
             lastname = firstname[mid:]
             firstname = firstname[:mid]
-
         return " ".join(firstname), " ".join(lastname)
 
 
 def process_and_split_excel(input_file, output_dir, output_format="excel",
                             group_by_col='GRUPO / TALLER', roles_mapping=None):
-    """
-    Procesa archivos, transforma datos y divide en archivos por grupo.
-    """
+    """Procesa archivos, transforma datos y divide en archivos por grupo."""
 
     try:
-        # Intenta leer como Excel primero (maneja mejor las codificaciones automáticamente)
+        # Intenta leer como Excel primero
         df = pd.read_excel(input_file, engine='openpyxl')
     except (FileNotFoundError, ValueError, KeyError, TypeError) as e1:
         try:
-            # Si falla Excel, intenta leer como CSV con UTF-8
+            # Si falla Excel, intenta leer como CSV con UTF-8 y delimitador \t
             df = pd.read_csv(input_file, sep='\t', encoding='utf-8')
         except (FileNotFoundError, pd.errors.ParserError, UnicodeDecodeError) as e2:
             try:
-                # Si UTF-8 falla, intenta con latin-1 como último recurso
+                # Si UTF-8 falla, intenta con latin-1 y delimitador \t
                 df = pd.read_csv(input_file, sep='\t', encoding='latin-1')
             except (FileNotFoundError, pd.errors.ParserError, UnicodeDecodeError) as e3:
-                print(f"Error: No se pudo leer el archivo '{input_file}' ni como Excel ni como CSV.")
+                print(f"Error: No se pudo leer '{input_file}' ni como Excel ni como CSV.")
                 print(f"Errores:\nExcel: {e1}\nCSV (utf-8): {e2}\nCSV (latin-1): {e3}")
                 return
 
@@ -85,6 +77,10 @@ def process_and_split_excel(input_file, output_dir, output_format="excel",
             phone_number = str(row['Telefonos']) if pd.notna(row['Telefonos']) else ''
             phone_number = re.sub(r'\D', '', phone_number)
 
+            # --- Obtener 'Actividad' y 'GRUPO / TALLER' ---
+            actividad = row.get('Actividad', '')  # Usar .get() por si no existe
+            grupo_taller = row.get(group_by_col, '')  # Usar group_by_col y .get()
+
             for position, cols in roles_mapping.items():
                 name_col, email_col = cols
                 try:
@@ -96,28 +92,36 @@ def process_and_split_excel(input_file, output_dir, output_format="excel",
 
                 if email and full_name:
                     firstname, lastname = split_name(full_name)
+                    # --- Crear los tags ---
+                    tags = f"{grupo_taller},{actividad}".strip(',') #Quita comas extra
+                    tags = tags.replace(" ,", ",").replace(", ",",") #Quita espacios raros
                     person_data = {
-                        'Firstname': firstname, 'Lastname': lastname, 'Email': email,
-                        'Contact phonenumber': phone_number, 'Position': position,
-                        'Company': company, 'Vat': '', 'Phonenumber': '', 'Country': 'Panama',
-                        'City': '', 'Zip': '', 'State': '', 'Address': '',
-                        'Website': '', 'Billing street': '', 'Billing city': 'Panama',
-                        'Billing state': '', 'Billing zip': '', 'Billing country': 'Panama',
-                        'Shipping street': '', 'Shipping city': '', 'Shipping state': '',
-                        'Shipping zip': '', 'Shipping country': '', 'Longitude': '', 'Latitude': '',
-                        'Stripe id': ''
+                        'Name': f"{firstname} {lastname}".strip(),  # Combina nombre y apellido
+                        'Position': position,
+                        'Company': company,
+                        'Description': '',  # Valores por defecto para las nuevas columnas
+                        'Country': 'Panama',
+                        'Zip': '',
+                        'City': '',  # Ya no se pone SAN FELIPE por defecto
+                        'State': '',
+                        'Address': '',
+                        'Status': '',
+                        'Source': '',
+                        'Email': email,
+                        'Website': '',
+                        'Phonenumber': phone_number,
+                        'Lead value': '',
+                        'Tags': tags  # Agregar los tags
                     }
                     data.append(person_data)
 
         output_df = pd.DataFrame(data)
         if not output_df.empty:
+            # --- Orden de columnas CORRECTO ---
             column_order = [
-                'Firstname', 'Lastname', 'Email', 'Contact phonenumber', 'Position',
-                'Company', 'Vat', 'Phonenumber', 'Country', 'City', 'Zip', 'State',
-                'Address', 'Website', 'Billing street', 'Billing city', 'Billing state',
-                'Billing zip', 'Billing country', 'Shipping street', 'Shipping city',
-                'Shipping state', 'Shipping zip', 'Shipping country', 'Longitude',
-                'Latitude', 'Stripe id'
+                'Name', 'Position', 'Company', 'Description', 'Country', 'Zip',
+                'City', 'State', 'Address', 'Status', 'Source', 'Email',
+                'Website', 'Phonenumber', 'Lead value', 'Tags'
             ]
             output_df = output_df[column_order]
 
@@ -130,10 +134,14 @@ def process_and_split_excel(input_file, output_dir, output_format="excel",
             if output_format == "csv":
                 output_filepath = os.path.join(output_dir, f"{output_filename}.csv")
                 try:
-  # Guarda en UTF-8
-                    output_df.to_csv(output_filepath, index=False, encoding='utf-8-sig')
+                    # --- Usa csv.writer para un CSV bien formado ---
+                    with open(output_filepath, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+                        writer.writerow(output_df.columns)  # Encabezados
+                        for row in output_df.values:
+                            writer.writerow(row)
+                    # ------------------------------------------------
                     print(f"Datos de '{group_name}' guardados en '{output_filepath}'")
-                    
                 except Exception as e:
                     print(f"Error al guardar '{output_filepath}': {e}")
             else:
@@ -148,8 +156,7 @@ def process_and_split_excel(input_file, output_dir, output_format="excel",
 
 
 def main():
-    """Función principal que maneja los argumentos de la línea de comandos."""
-
+    """Función principal."""
     parser = argparse.ArgumentParser(description="Procesa y divide archivos Excel/CSV por grupos.")
     parser.add_argument("input_dir", help="Directorio de entrada.")
     parser.add_argument("-o", "--output_dir",
@@ -160,11 +167,9 @@ def main():
                         help="Columna para agrupar (por defecto: 'GRUPO / TALLER').")
     parser.add_argument("-m", "--mapping",
                         help="Ruta a un archivo de mapeo de columnas (opcional).")
-
     args = parser.parse_args()
 
     output_dir = args.output_dir if args.output_dir else args.input_dir
-
     if output_dir != args.input_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -174,26 +179,24 @@ def main():
             mapping_df = pd.read_csv(args.mapping)
             roles_mapping = {}
             for index, row in mapping_df.iterrows():
-                role = row['Role']
-                name_col = row['NameColumn']
-                email_col = row['EmailColumn']
-                roles_mapping[role] = [name_col, email_col]
-
+                roles_mapping[row['Role']] = [row['NameColumn'], row['EmailColumn']]
         except Exception as e:
-            print(f"Error al leer el archivo de mapeo: {e}. Se usará el mapeo predeterminado.")
+            print(f"Error al leer mapeo: {e}. Usando mapeo predeterminado.")
 
-    input_files = glob(os.path.join(args.input_dir, "*.xlsx")) + \
-                  glob(os.path.join(args.input_dir, "*.xls")) + \
-                  glob(os.path.join(args.input_dir, "*.csv"))
+    # --- MODIFICACIÓN AQUÍ: Simplificar la búsqueda de archivos ---
+    input_files = glob(os.path.join(args.input_dir, "*"))  # Busca *cualquier* archivo
 
-    if not input_files:
-        print(f"No se encontraron archivos Excel/CSV en: {args.input_dir}")
+    filtered_input_files = [f for f in input_files if not os.path.basename(f).startswith("~$") and os.path.isfile(f)]
+
+
+    if not filtered_input_files:
+        print(f"No se encontraron archivos válidos en: {args.input_dir}")
         return
+    # ----------------------------------------------------------------
 
-    for input_file in input_files:
+    for input_file in filtered_input_files:
         print(f"Procesando archivo: {input_file}")
         process_and_split_excel(input_file, output_dir, args.format, args.group_by, roles_mapping)
-
 
 if __name__ == "__main__":
     main()
